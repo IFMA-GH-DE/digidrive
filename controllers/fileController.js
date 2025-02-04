@@ -45,15 +45,17 @@ const getFiles = async (req, res) => {
       files.map(async (file) => {
         try {
           // Extract just the file key from the full S3 URL
-          const fileKey = file.filePath.replace(
+          /*  const fileKey = file.filePath.replace(
             "https://digidrive-start.s3.eu-central-1.amazonaws.com/",
             ""
-          );
+          ); */
 
-          console.log(`Generating signed URL for file: ${fileKey}`);
+          console.log(`Generating signed URL for file: ${file.filePath}`);
 
           // Generate the signed URL
-          const signedUrl = await generateSignedUrl(fileKey);
+          const signedUrl = await generateSignedUrl(file.filePath);
+
+          console.log("signedUrl getFiles", signedUrl);
 
           return { ...file.toObject(), signedUrl };
         } catch (error) {
@@ -134,6 +136,73 @@ const getRelatedFiles = async (req, res) => {
   }
 };
 
+//Update File/s feeds actions in frontend
+const updateFile = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const { filename, tags, folderId, priority } = req.body;
+    console.log("FromUpdateFile", req.body);
+
+    if (!fileId) {
+      return res.status(400).json({ message: "File ID is required." });
+    }
+
+    const updateFields = {};
+
+    // Add filename if provided
+    if (filename) updateFields.filename = filename;
+
+    // Add folderId if provided
+    if (folderId) updateFields.folderId = folderId;
+
+    // Ensure priority is stored as a tag
+    let formattedTags = tags || []; // Default to empty array if no tags
+
+    if (priority) {
+      // Convert priority to a tag format
+      if (priority < 1 || priority > 5) {
+        return res
+          .status(400)
+          .json({ message: "Priority must be between 1 and 5." });
+      }
+
+      const priorityTag = {
+        name: "Priority",
+        type: "priority",
+        value: String(priority),
+      };
+
+      // Remove old priority tag if it exists
+      formattedTags = formattedTags.filter((tag) => tag.type !== "priority");
+      formattedTags.push(priorityTag);
+    }
+
+    console.log("formattedTags", formattedTags);
+
+    // Add tags if provided
+    if (formattedTags.length > 0) updateFields.tags = formattedTags;
+
+    console.log("updateFields", updateFields);
+
+    // Perform the update
+    const updatedFile = await File.findByIdAndUpdate(fileId, updateFields, {
+      new: true,
+    });
+
+    console.log("updatedFile", updatedFile);
+    if (!updatedFile) {
+      return res.status(404).json({ message: "File not found." });
+    }
+
+    res
+      .status(200)
+      .json({ message: "File updated successfully", file: updatedFile });
+  } catch (error) {
+    console.error("Error updating file:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 // Version Control
 const uploadNewVersion = async (req, res) => {
   try {
@@ -169,26 +238,6 @@ const getFileVersions = async (req, res) => {
     res.status(200).json({ versions: file.versions });
   } catch (error) {
     res.status(500).json({ message: "Server error", error });
-  }
-};
-
-//Update File
-const updateFile = async (req, res) => {
-  try {
-    const { fileId } = req.params;
-    const { filename, tags, folderId, relatedFiles } = req.body;
-
-    const updatedFile = await File.findByIdAndUpdate(
-      fileId,
-      { filename, tags, folderId, relatedFiles },
-      { new: true }
-    );
-
-    res
-      .status(200)
-      .json({ message: "File updated successfully", file: updatedFile });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 

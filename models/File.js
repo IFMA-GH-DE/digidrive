@@ -23,7 +23,15 @@ const FileSchema = new mongoose.Schema(
         name: { type: String, required: true },
         type: {
           type: String,
-          enum: ["priority", "department", "project", "custom"],
+          enum: [
+            "priority",
+            "department",
+            "project",
+            "school",
+            "personal",
+            "family",
+            "custom",
+          ],
           required: true,
         },
         value: { type: String, required: false }, // Optional metadata

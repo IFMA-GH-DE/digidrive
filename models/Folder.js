@@ -4,6 +4,8 @@ const FolderSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     description: { type: String, required: false }, // Optional description
+    size: { type: Number, default: 0 },
+
     parentFolderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Folder",

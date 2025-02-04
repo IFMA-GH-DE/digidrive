@@ -18,9 +18,16 @@ exports.createFolder = async (req, res) => {
 
     console.log("Folder saved successfully:", savedFolder);
 
-    res
-      .status(201)
-      .json({ message: "Folder created successfully", folder: savedFolder });
+    res.status(201).json({
+      message: "Folder created successfully",
+      folder: {
+        _id: savedFolder._id,
+        name: savedFolder.name,
+        description: savedFolder.description || "No description",
+        size: 0, // Placeholder
+        filesCount: 0, // Placeholder
+      },
+    });
   } catch (error) {
     console.error("Error saving folder:", error);
     res.status(500).json({ message: "Server error", error: error.message });
