@@ -1,8 +1,10 @@
 const File = require("../models/File");
 const User = require("../models/User"); // controllers/fileController.js
+const mongoose = require("mongoose");
 require("dotenv").config({ path: ".env.development" });
 const { uploadToS3, deleteFromS3 } = require("../services/s3Upload");
 const { generateSignedUrl } = require("../services/s3SignedUrl");
+const predefinedTags = require("../constants/predefinedTags");
 
 //Upload file
 const uploadFile = async (req, res) => {
@@ -89,6 +91,8 @@ const deleteFile = async (req, res) => {
       file.filePath.split("/").pop()
     );
 
+    console.log("s3DELETE:", deleteFromS3Results);
+
     console.log("deleteFromS3Results", deleteFromS3Results);
     const findAndDeleteResutls = await File.findByIdAndDelete(fileId);
     console.log("findAndDeleteResutls", findAndDeleteResutls);
@@ -100,25 +104,6 @@ const deleteFile = async (req, res) => {
     res.status(200).json({ message: "File deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Server error" });
-  }
-};
-
-// Link files
-const linkFiles = async (req, res) => {
-  try {
-    const { fileId, relatedFileId } = req.body;
-
-    await File.findByIdAndUpdate(fileId, {
-      $addToSet: { relatedFiles: relatedFileId },
-    });
-
-    await File.findByIdAndUpdate(relatedFileId, {
-      $addToSet: { relatedFiles: fileId },
-    });
-
-    res.status(200).json({ message: "Files linked successfully" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error });
   }
 };
 
@@ -140,8 +125,7 @@ const getRelatedFiles = async (req, res) => {
 const updateFile = async (req, res) => {
   try {
     const { fileId } = req.params;
-    const { filename, tags, folderId, priority } = req.body;
-    console.log("FromUpdateFile", req.body);
+    let { filename, tags, folderId, priority } = req.body;
 
     if (!fileId) {
       return res.status(400).json({ message: "File ID is required." });
@@ -149,17 +133,33 @@ const updateFile = async (req, res) => {
 
     const updateFields = {};
 
-    // Add filename if provided
+    // ✅ Update filename and Folder if provided
     if (filename) updateFields.filename = filename;
-
-    // Add folderId if provided
     if (folderId) updateFields.folderId = folderId;
 
-    // Ensure priority is stored as a tag
-    let formattedTags = tags || []; // Default to empty array if no tags
+    // ✅ update tags if provided
+    if (tags) {
+      console.log("TagsJson", tags);
+      try {
+        tags = JSON.parse(tags);
+      } catch (error) {
+        return res.status(400).json({ message: "Invalid tags format" });
+      }
 
+      // ✅ Validate tag types before saving
+      tags = tags.map((tag) => {
+        console.log("Tag afterJson", tag);
+        return {
+          name: tag.name.trim(),
+          type: predefinedTags.includes(tag.name) ? tag.name : "custom", // ✅ Enforce correct tag type
+        };
+      });
+
+      updateFields.tags = tags;
+    }
+
+    // ✅ Ensure priority is saved as a tag
     if (priority) {
-      // Convert priority to a tag format
       if (priority < 1 || priority > 5) {
         return res
           .status(400)
@@ -173,23 +173,18 @@ const updateFile = async (req, res) => {
       };
 
       // Remove old priority tag if it exists
-      formattedTags = formattedTags.filter((tag) => tag.type !== "priority");
-      formattedTags.push(priorityTag);
+      updateFields.tags =
+        updateFields.tags?.filter((tag) => tag.type !== "priority") || [];
+      updateFields.tags.push(priorityTag);
     }
 
-    console.log("formattedTags", formattedTags);
+    console.log("Updating File with Fields:", updateFields);
 
-    // Add tags if provided
-    if (formattedTags.length > 0) updateFields.tags = formattedTags;
-
-    console.log("updateFields", updateFields);
-
-    // Perform the update
+    // ✅ Perform the update
     const updatedFile = await File.findByIdAndUpdate(fileId, updateFields, {
       new: true,
     });
 
-    console.log("updatedFile", updatedFile);
     if (!updatedFile) {
       return res.status(404).json({ message: "File not found." });
     }
@@ -199,6 +194,51 @@ const updateFile = async (req, res) => {
       .json({ message: "File updated successfully", file: updatedFile });
   } catch (error) {
     console.error("Error updating file:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Link files, also serves actions in frontend
+
+// Link files
+const linkFiles = async (req, res) => {
+  try {
+    let { fileId, relatedFiles } = req.body;
+
+    console.log("Received Data:", req.body);
+
+    // ✅ Validate `fileId` & `relatedFiles`
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      return res
+        .status(400)
+        .json({ message: `Invalid fileId format: ${fileId}` });
+    }
+
+    if (!Array.isArray(relatedFiles) || relatedFiles.length === 0) {
+      return res.status(400).json({ message: "Invalid relatedFiles data" });
+    }
+
+    // ✅ Convert fileId & relatedFiles to ObjectId format
+    fileId = new mongoose.Types.ObjectId(fileId);
+    relatedFiles = relatedFiles.map((id) => new mongoose.Types.ObjectId(id));
+
+    console.log("Processing fileId:", fileId, "Related Files:", relatedFiles);
+
+    const updatedFile = await File.findByIdAndUpdate(
+      fileId,
+      { $addToSet: { relatedFiles: { $each: relatedFiles } } }, // ✅ Ensure correct format
+      { new: true }
+    );
+
+    if (!updatedFile) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    res
+      .status(200)
+      .json({ message: "Files linked successfully", file: updatedFile });
+  } catch (error) {
+    console.error("Error linking files:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };

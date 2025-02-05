@@ -1,5 +1,15 @@
 const mongoose = require("mongoose");
 
+const predefinedTags = [
+  "priority",
+  "department",
+  "project",
+  "school",
+  "personal",
+  "family",
+  "custom",
+];
+
 const FileSchema = new mongoose.Schema(
   {
     filename: { type: String, required: true },
@@ -94,6 +104,21 @@ FileSchema.pre("save", function (next) {
     uniqueTags.add(tag.name);
   });
 
+  next();
+});
+
+// ✅ Schema Validation: Ensure correct tag types
+FileSchema.pre("save", function (next) {
+  this.tags.forEach((tag) => {
+    if (tag.type === "priority" && (tag.value < 1 || tag.value > 5)) {
+      return next(new Error("Priority type must be between 1 and 5"));
+    }
+    if (predefinedTags.includes(tag.name)) {
+      tag.type = tag.name; // ✅ Automatically set correct type
+    } else {
+      tag.type = "custom"; // ✅ Mark unrecognized tags as "custom"
+    }
+  });
   next();
 });
 

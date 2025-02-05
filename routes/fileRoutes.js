@@ -27,7 +27,7 @@ router.post(
 router.get("/", authMiddleware, getFiles);
 
 //link files
-router.post("/link-files", linkFiles);
+router.put("/link", authMiddleware, linkFiles);
 //get related files
 router.get("/related/:fileId", getRelatedFiles);
 
