@@ -4,6 +4,8 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const errorMiddleware = require("./middleware/errorMiddleware");
+const morgan = require("morgan");
+const logger = require("./utils/logger");
 
 const authRoutes = require("./routes/authRoutes.js");
 const fileRoutes = require("./routes/fileRoutes");
@@ -13,6 +15,9 @@ const shareRoutes = require("./routes/sharedRoutes");
 dotenv.config();
 
 const app = express();
+
+// Use 'combined' format for detailed logs
+app.use(logger); // Logs requests to the terminal
 
 // Middleware
 app.use(
