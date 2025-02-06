@@ -17,7 +17,11 @@ const s3Client = new S3Client({
 });
 
 exports.uploadToS3 = async (file) => {
-  const key = `${Date.now()}-${file.originalname}`;
+  const key = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${
+    file.originalname
+  }`;
+
+  // const key = `${Date.now()}-${file.originalname}`;
   //const key = `${Date.now()}-${file.originalname}`;
 
   const params = {

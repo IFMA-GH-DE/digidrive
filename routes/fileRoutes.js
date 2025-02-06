@@ -8,6 +8,8 @@ const {
   uploadNewVersion,
   getFileVersions,
   updateFile,
+  moveFilesToFolder,
+  tagFiles,
 } = require("../controllers/fileController");
 const { updateStorageUsage } = require("../controllers/fileController");
 const authMiddleware = require("../middleware/authMiddleware");
@@ -25,6 +27,12 @@ router.post(
 
 //get all files
 router.get("/", authMiddleware, getFiles);
+
+//add files to Folder
+router.put("/move", authMiddleware, moveFilesToFolder);
+
+//get all files
+router.put("/tags", authMiddleware, tagFiles);
 
 //link files
 router.put("/link", authMiddleware, linkFiles);

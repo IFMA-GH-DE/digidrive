@@ -28,25 +28,18 @@ const FileSchema = new mongoose.Schema(
     },
 
     // Tags now allow different categories beyond priority
-    tags: [
-      {
-        name: { type: String, required: true },
-        type: {
-          type: String,
-          enum: [
-            "priority",
-            "department",
-            "project",
-            "school",
-            "personal",
-            "family",
-            "custom",
-          ],
-          required: true,
-        },
-        value: { type: String, required: false }, // Optional metadata
+   // ✅ Enforcing predefined & custom tags
+   tags: [
+    {
+      name: { type: String, required: true },
+      type: {
+        type: String,
+        enum: predefinedTags, // ✅ Ensures type is predefined or "custom"
+        required: true,
       },
-    ],
+      value: { type: String, required: false }, // Optional metadata
+    },
+  ],
 
     // File Relationships
     relatedFiles: [
