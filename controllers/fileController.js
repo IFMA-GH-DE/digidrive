@@ -2,53 +2,102 @@ const File = require("../models/File");
 const User = require("../models/User"); // controllers/fileController.js
 const Folder = require("../models/Folder");
 const mongoose = require("mongoose");
-require("dotenv").config({ path: ".env.development" });
+
 const { uploadToS3, deleteFromS3 } = require("../services/s3Upload");
 const { generateSignedUrl } = require("../services/s3SignedUrl");
 const predefinedTags = require("../constants/predefinedTags");
+const { assignFilesToFolders } = require("../services/assignFilesToFolders");
+const applyTagsToFiles = require("../utils/applyTagsToFiles");
+require("dotenv").config({ path: ".env.development" });
 
-//**************************************Upload file***********************************************//
+//**************************************Upload file***********************************************//✅
+
 const uploadFile = async (req, res) => {
   console.log("FromUploadFile", req.files);
 
   try {
-    const uploadedFiles = await Promise.all(
-      req.files.map(async (file) => {
-        const uploadResult = await uploadToS3(file);
-        const signedUrl = await generateSignedUrl(uploadResult.Key);
-        console.log("signedUrl", signedUrl);
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "No files received" });
+    }
 
-        return {
-          filename: file.originalname,
-          fileType: file.mimetype,
-          fileSize: file.size,
-          ownerId: req.user.userId,
-          folderId: req.body.folderId || null, // Allow folder selection
-          filePath: uploadResult.Key,
-          signedUrl,
-        };
-      })
-    );
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ message: "Unauthorized: User not found" });
+    }
 
+    let folderId = req.body.folderId;
+    if (!folderId || folderId === "root") {
+      folderId = null;
+    } else if (!mongoose.Types.ObjectId.isValid(folderId)) {
+      return res.status(400).json({ message: "Invalid folderId format" });
+    }
+
+    const uploadedFiles = [];
+    const tags = req.body.tags ? JSON.parse(req.body.tags) : []; // ✅ Extract tags
+
+    console.log("Tags", tags);
+
+    for (const file of req.files) {
+      console.log(`Processing file: ${file.originalname}`);
+
+      if (file.size === 0) {
+        console.log(`❌ Skipping empty file: ${file.originalname}`);
+        continue;
+      }
+
+      const existingFile = await File.findOne({
+        ownerId: req.user.userId,
+        filePath: file.originalname,
+      });
+
+      if (existingFile) {
+        console.log(
+          `Duplicate file detected: ${file.originalname}, skipping upload.`
+        );
+        continue;
+      }
+
+      const uploadResult = await uploadToS3(file);
+      if (!uploadResult || !uploadResult.Key) {
+        throw new Error(`S3 upload failed for file: ${file.originalname}`);
+      }
+
+      const signedUrl = await generateSignedUrl(uploadResult.Key);
+      if (!signedUrl) {
+        throw new Error(
+          `Signed URL generation failed for: ${file.originalname}`
+        );
+      }
+
+      uploadedFiles.push({
+        filename: file.originalname,
+        fileType: file.mimetype,
+        fileSize: file.size,
+        ownerId: req.user.userId,
+        folderId,
+        filePath: uploadResult.Key,
+        signedUrl,
+        tags, // ✅ Ensure tags are stored
+      });
+    }
+
+    if (!uploadedFiles.length) {
+      throw new Error("No valid new files to insert into the database.");
+    }
+
+    console.log("Saving files to the database...");
     const files = await File.insertMany(uploadedFiles);
 
-    const folderId = files[0].folderId;
+    console.log("Files successfully inserted into DB");
 
-    // ✅ If file was inside a folder, update the folder size & file count
-    if (folderId) {
-      console.log("Updating folder:", folderId);
-      const filesInFolder = await File.find({ folderId });
+    // ✅ Apply Tags to Files
+    await applyTagsToFiles(files, tags);
 
-      const totalSize = filesInFolder.reduce(
-        (sum, file) => sum + file.fileSize,
-        0
-      );
-      const fileCount = filesInFolder.length;
+    // ✅ Assign to Smart Folders
+    await assignFilesToFolders(files);
 
-      await Folder.findByIdAndUpdate(folderId, { size: totalSize, fileCount });
-    }
     res.status(201).json({ message: "Files uploaded successfully", files });
   } catch (error) {
+    console.error("File Upload Error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -276,10 +325,13 @@ const tagFiles = async (req, res) => {
     );
 
     console.log("Updated Files:", updatedFiles);
+
     // Fetch updated files
     const modifiedFiles = await File.find({ _id: { $in: fileIds } });
-
     console.log("Updated Files:", modifiedFiles);
+
+    // ✅ Run Smart Folder assignment after every file upload
+    await assignFilesToFolders(modifiedFiles);
 
     res.status(200).json({
       message: "Tags applied successfully",

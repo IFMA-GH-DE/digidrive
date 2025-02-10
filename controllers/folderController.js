@@ -40,16 +40,22 @@ exports.createFolder = async (req, res) => {
 //Create Smart Folder
 exports.createSmartFolder = async (req, res) => {
   try {
-    const { name, ownerId, rules } = req.body;
+    const { name, rules } = req.body;
+
+    console.log("Creating smart Folder:", name, rules);
 
     const smartFolder = new Folder({
       name,
-      ownerId,
+      ownerId: req.user.userId,
       isSmartFolder: true,
       smartFolderRules: rules,
     });
 
-    await smartFolder.save();
+    console.log("Created smart Folder:", smartFolder);
+
+    const savedSmartFolder = await smartFolder.save();
+
+    console.log("Folder saved successfully:", savedSmartFolder);
     res
       .status(201)
       .json({ message: "Smart Folder created", folder: smartFolder });
@@ -124,6 +130,56 @@ exports.getFolders = async (req, res) => {
     res.json(folders);
   } catch (error) {
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+//**************************************************Get Files by folder*******************************************//
+exports.getFilesByFolder = async (req, res) => {
+  try {
+    const { folderId } = req.params;
+
+    console.log("gettingFIlesbyFolderId", folderId);
+
+    if (!folderId) {
+      return res.status(400).json({ message: "Folder ID is required" });
+    }
+
+    const files = await File.find({ folderId });
+
+    console.log("The Files", files);
+
+    res.status(200).json(files);
+  } catch (error) {
+    console.error("Error fetching files by folder:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+//**************************************************Get SmartFolders*******************************************//✅
+
+exports.getSmartFolders = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id; // ✅ Normalize user ID
+    console.log("Getting smart folders", req.user.userId);
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized: User not found" });
+    }
+
+    console.log(`Fetching smart folders for user: ${userId}`);
+
+    // Fetch smart folders belonging to the authenticated user
+    const smartFolders = await Folder.find({
+      ownerId: req.user.userId,
+      isSmartFolder: true,
+    });
+
+    console.log("smartFolders", smartFolders);
+
+    res.status(200).json(smartFolders);
+  } catch (error) {
+    console.error("Error fetching smart folders:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -276,5 +332,45 @@ exports.moveFolders = async (req, res) => {
   } catch (error) {
     console.error("Error moving folder:", error);
     res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+/**
+ * @desc Delete multiple folders
+ * @route DELETE /api/folders/delete
+ * @access Private
+ */
+
+//**************************************************deleteFolders*******************************************//✅
+exports.deleteFolders = async (req, res) => {
+  try {
+    const { folderIds } = req.body;
+
+    if (!folderIds || !Array.isArray(folderIds) || folderIds.length === 0) {
+      return res.status(400).json({ message: "Invalid folder IDs provided" });
+    }
+
+    // Check if folders exist
+    const folders = await Folder.find({ _id: { $in: folderIds } });
+
+    if (folders.length === 0) {
+      return res.status(404).json({ message: "No folders found to delete" });
+    }
+
+    // Delete associated files in each folder
+    await File.deleteMany({ folderId: { $in: folderIds } });
+
+    // Delete the folders
+    await Folder.deleteMany({ _id: { $in: folderIds } });
+
+    return res.status(200).json({
+      message: "Folders deleted successfully",
+      deletedFolderIds: folderIds,
+    });
+  } catch (error) {
+    console.error("Error deleting folders:", error);
+    return res
+      .status(500)
+      .json({ message: "Server error while deleting folders" });
   }
 };

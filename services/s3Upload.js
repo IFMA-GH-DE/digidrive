@@ -21,7 +21,7 @@ exports.uploadToS3 = async (file) => {
     file.originalname
   }`;
 
-  // const key = `${Date.now()}-${file.originalname}`;
+  //const key = `${Date.now()}-${file.originalname}`;
   //const key = `${Date.now()}-${file.originalname}`;
 
   const params = {

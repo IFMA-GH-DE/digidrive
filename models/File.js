@@ -28,18 +28,18 @@ const FileSchema = new mongoose.Schema(
     },
 
     // Tags now allow different categories beyond priority
-   // ✅ Enforcing predefined & custom tags
-   tags: [
-    {
-      name: { type: String, required: true },
-      type: {
-        type: String,
-        enum: predefinedTags, // ✅ Ensures type is predefined or "custom"
-        required: true,
+    // ✅ Enforcing predefined & custom tags
+    tags: [
+      {
+        name: { type: String, required: true },
+        type: {
+          type: String,
+          enum: predefinedTags, // ✅ Ensures type is predefined or "custom"
+          required: true,
+        },
+        value: { type: String, required: false }, // Optional metadata
       },
-      value: { type: String, required: false }, // Optional metadata
-    },
-  ],
+    ],
 
     // File Relationships
     relatedFiles: [
@@ -67,18 +67,6 @@ const FileSchema = new mongoose.Schema(
         metadata: { type: Map, of: String }, // Example: { "comment": "Updated contract" }
       },
     ],
-
-    // Smart Folder Integration
-    isSmartFolder: { type: Boolean, default: false },
-    smartFolderRules: {
-      fileType: { type: String, required: false },
-      tags: { type: [String], required: false },
-      sizeLimit: { type: Number, required: false },
-      createdBetween: {
-        from: { type: Date, required: false },
-        to: { type: Date, required: false },
-      },
-    },
   },
   { timestamps: true }
 );

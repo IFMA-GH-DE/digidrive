@@ -11,6 +11,7 @@ const authRoutes = require("./routes/authRoutes.js");
 const fileRoutes = require("./routes/fileRoutes");
 const folderRoutes = require("./routes/folderRoutes");
 const shareRoutes = require("./routes/sharedRoutes");
+const userRoutes = require("./routes/userRoute.js");
 
 dotenv.config();
 
@@ -33,10 +34,11 @@ app.use(
 app.use(express.json()); // Parse JSON request bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded data
 
-app.use("/api/auth", authRoutes);
-app.use("/api/files", fileRoutes);
-app.use("/api/folders", folderRoutes);
-app.use("/api/share", shareRoutes);
+app.use("/api/auth", authRoutes); // authentication->signUp, SignIn
+app.use("/api/user", userRoutes); // user profile n updates
+app.use("/api/files", fileRoutes); // files routes
+app.use("/api/folders", folderRoutes); // folders routes
+app.use("/api/share", shareRoutes); // share routes
 
 // Health Check Route
 app.get("/api/health", (req, res) => {

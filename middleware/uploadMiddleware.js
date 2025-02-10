@@ -19,7 +19,7 @@ const getFileSizeLimit = (plan) => {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // Default limit, overridden dynamically
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB limit, // Default limit, overridden dynamically
 }).array("files", 10); // Allow multiple files, max 10
 
 const uploadMiddleware = [

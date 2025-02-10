@@ -4,7 +4,13 @@ const predefinedTags = [
   "project",
   "school",
   "personal",
+  "my files",
+  "secrets",
+  "hobbies",
+  "entertainment",
+  "relationships",
   "family",
+  "daily",
   "custom",
 ];
 
