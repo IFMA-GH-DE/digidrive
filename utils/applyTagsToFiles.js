@@ -3,44 +3,49 @@ const File = require("../models/File");
 const Folder = require("../models/Folder");
 //const mongoose = require("mongoose");
 
-const applyTagsToFiles = async (files, tags) => {
+const applyTagsToFiles = async (fileIds, tags) => {
   try {
-    if (!files || files.length === 0) return;
-
-    const fileIds = files.map((file) => file._id);
-
-    // ✅ Ensure tags are parsed correctly
-    const parsedTags = Array.isArray(tags) ? tags : JSON.parse(tags || "[]");
-
-    if (parsedTags.length === 0) {
-      console.log("No tags provided for files.");
-      return;
+    // Ensure fileIds is an array
+    if (!Array.isArray(fileIds)) {
+      fileIds = [fileIds];
     }
 
-    // ✅ Remove duplicate tag names
-    const uniqueTags = [];
-    const seenTagNames = new Set();
+    console.log("Applying Tags To Files:", fileIds, "Tags:", tags);
 
-    parsedTags.forEach((tag) => {
-      if (!seenTagNames.has(tag.name)) {
-        uniqueTags.push(tag);
-        seenTagNames.add(tag.name);
-      }
-    });
+    if (!tags || tags.length === 0) {
+      return console.log("No tags");
+    }
 
-    console.log(
-      `Applying unique tags: ${JSON.stringify(uniqueTags)} to files: ${fileIds}`
-    );
+    // 🔹 Ensure tags are in correct format
+    let parsedTags;
+    try {
+      parsedTags = typeof tags === "string" ? JSON.parse(tags) : tags;
+    } catch (error) {
+      console.error("Invalid JSON format for tags:", tags);
+      throw new Error("Invalid tags format. Ensure it's valid JSON.");
+    }
 
-    // ✅ Update files with unique tags
+    if (!Array.isArray(parsedTags)) {
+      throw new Error("Tags must be an array.");
+    }
+
+    // 🔹 Validate tag properties
+    parsedTags = parsedTags.map((tag) => ({
+      name: tag.name.trim(),
+      type: tag.type || "custom", // If type is missing, default to 'custom'
+    }));
+
+    // ✅ Apply tags to all selected files
     await File.updateMany(
       { _id: { $in: fileIds } },
-      { $set: { tags: uniqueTags } }
+      { $set: { tags: parsedTags } }
     );
 
-    console.log(`✅ Successfully applied unique tags to files.`);
+    console.log("✅ Tags successfully applied.");
+    return { success: true };
   } catch (error) {
     console.error("Error applying tags to files:", error);
+    throw new Error(error.message);
   }
 };
 

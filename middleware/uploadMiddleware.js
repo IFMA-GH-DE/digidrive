@@ -56,7 +56,7 @@ const uploadMiddleware = [
     console.log("The files", req.files);
 
     try {
-      const user = await User.findById(req.user.userId);
+      const user = await User.findById(req.user._id);
       if (!user) return res.status(404).json({ message: "User not found" });
 
       // Calculate total size of uploaded files

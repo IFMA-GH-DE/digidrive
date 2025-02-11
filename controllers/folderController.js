@@ -46,7 +46,7 @@ exports.createSmartFolder = async (req, res) => {
 
     const smartFolder = new Folder({
       name,
-      ownerId: req.user.userId,
+      ownerId: req.user._id,
       isSmartFolder: true,
       smartFolderRules: rules,
     });
@@ -81,6 +81,13 @@ exports.makeSmartFolder = async (req, res) => {
       return res.status(404).json({ message: "Folder not found." });
     }
 
+    // ✅ Check folder ownership before proceeding
+    try {
+      await checkFolderOwnership(folderId, req.user._id);
+    } catch (ownershipError) {
+      return res.status(403).json({ message: ownershipError.message });
+    }
+
     // Update folder to be a Smart Folder
     folder.isSmartFolder = true;
     folder.smartFolderRules = rules || {};
@@ -110,6 +117,15 @@ exports.getSmartFolderFiles = async (req, res) => {
       return res.status(404).json({ message: "Smart folder not found" });
     }
 
+    // ✅ Check folder ownership before proceeding
+    try {
+      console.log("checking folder ownership...");
+      const ownerres = await checkFolderOwnership(folderId, req.user._id);
+      console.log(ownerres);
+    } catch (ownershipError) {
+      return res.status(403).json({ message: ownershipError.message });
+    }
+
     // Build search query dynamically
     const query = {};
     folder.smartFolderRules.forEach((value, key) => {
@@ -126,7 +142,7 @@ exports.getSmartFolderFiles = async (req, res) => {
 //**************************************************Get Folders*******************************************//✅
 exports.getFolders = async (req, res) => {
   try {
-    const folders = await Folder.find({ ownerId: req.user.userId });
+    const folders = await Folder.find({ ownerId: req.user._id });
     res.json(folders);
   } catch (error) {
     res.status(500).json({ message: "Server error" });
@@ -159,8 +175,8 @@ exports.getFilesByFolder = async (req, res) => {
 
 exports.getSmartFolders = async (req, res) => {
   try {
-    const userId = req.user?.userId || req.user?.id; // ✅ Normalize user ID
-    console.log("Getting smart folders", req.user.userId);
+    const userId = req.user._id; // ✅ Normalize user ID
+    console.log("Getting smart folders", req.user._id);
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized: User not found" });
@@ -170,7 +186,7 @@ exports.getSmartFolders = async (req, res) => {
 
     // Fetch smart folders belonging to the authenticated user
     const smartFolders = await Folder.find({
-      ownerId: req.user.userId,
+      ownerId: req.user._id,
       isSmartFolder: true,
     });
 
@@ -204,6 +220,13 @@ exports.tagFolders = async (req, res) => {
     // Convert single folderId to an array for consistency
     if (!Array.isArray(folderIds)) {
       folderIds = [folderIds];
+    }
+
+    // ✅ Check folder ownership before proceeding
+    try {
+      await checkFolderOwnership(folderIds, req.user._id);
+    } catch (ownershipError) {
+      return res.status(403).json({ message: ownershipError.message });
     }
 
     let updateFields = {};

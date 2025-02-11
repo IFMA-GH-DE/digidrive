@@ -69,7 +69,7 @@ const assignFilesToFolders = async (files) => {
           }
         }
 
-        // ✅ Tags must match if they exist (Tags Take Priority)
+        // ✅Ensure all conditions are meant if provided
         if (tags && tags.length > 0) {
           const hasMatchingTag = file.tags.some((tag) =>
             tags.includes(tag.name)
@@ -77,12 +77,6 @@ const assignFilesToFolders = async (files) => {
           if (!hasMatchingTag) {
             matchesAllConditions = false;
             reasonSkipped.push("No matching tags");
-          } else {
-            console.log(
-              `✅ File "${file.filename}" matched Smart Folder "${folder.name}" via tag: ${tags}`
-            );
-            bestMatch = folder; // Assign immediately if tags match
-            break;
           }
         }
 

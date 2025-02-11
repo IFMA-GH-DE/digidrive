@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
-
+const predefinedTags = require("../constants/predefinedTags");
+/* 
 const predefinedTags = [
   "priority",
   "department",
@@ -8,7 +9,7 @@ const predefinedTags = [
   "personal",
   "family",
   "custom",
-];
+]; */
 
 const FileSchema = new mongoose.Schema(
   {

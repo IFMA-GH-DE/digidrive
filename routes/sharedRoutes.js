@@ -7,7 +7,7 @@ const {
 const authMiddleware = require("../middleware/authMiddleware");
 const router = express.Router();
 
-router.post("/share", authMiddleware, createShareLink);
+router.post("/create", authMiddleware, createShareLink);
 router.get("/", authMiddleware, getSharedLinks);
 
 module.exports = router;

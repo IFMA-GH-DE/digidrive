@@ -45,8 +45,8 @@ router.post("version/:fileId", uploadNewVersion);
 //get file versions
 router.get("/versions/:fileId", getFileVersions);
 
-//update file
-router.put("/:fileId", authMiddleware, updateFile);
+/* //update file
+router.put("/:fileId", authMiddleware, updateFile); */
 
 //delete file
 router.delete("/:fileId", authMiddleware, deleteFile);

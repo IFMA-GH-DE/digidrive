@@ -2,25 +2,25 @@ const File = require("../models/File");
 const User = require("../models/User"); // controllers/fileController.js
 const Folder = require("../models/Folder");
 const mongoose = require("mongoose");
-
 const { uploadToS3, deleteFromS3 } = require("../services/s3Upload");
 const { generateSignedUrl } = require("../services/s3SignedUrl");
 const predefinedTags = require("../constants/predefinedTags");
 const { assignFilesToFolders } = require("../services/assignFilesToFolders");
 const applyTagsToFiles = require("../utils/applyTagsToFiles");
+const checkFileOwnership = require("../utils/checkFileOwnership");
 require("dotenv").config({ path: ".env.development" });
 
 //**************************************Upload file***********************************************//✅
 
 const uploadFile = async (req, res) => {
-  console.log("FromUploadFile", req.files);
+  console.log("FromUploadFile", req.files, req.user._id);
 
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files received" });
     }
 
-    if (!req.user || !req.user.userId) {
+    if (!req.user._id) {
       return res.status(401).json({ message: "Unauthorized: User not found" });
     }
 
@@ -45,7 +45,7 @@ const uploadFile = async (req, res) => {
       }
 
       const existingFile = await File.findOne({
-        ownerId: req.user.userId,
+        ownerId: req.user._id,
         filePath: file.originalname,
       });
 
@@ -72,7 +72,7 @@ const uploadFile = async (req, res) => {
         filename: file.originalname,
         fileType: file.mimetype,
         fileSize: file.size,
-        ownerId: req.user.userId,
+        ownerId: req.user._id,
         folderId,
         filePath: uploadResult.Key,
         signedUrl,
@@ -104,42 +104,39 @@ const uploadFile = async (req, res) => {
 
 //**************************************Get all files**********************************************************//
 const getFiles = async (req, res) => {
-  console.log("FromGetFiles", req.user.userId);
+  console.log("🔍 Incoming request to getFiles...");
+  console.log("🔑 Authenticated User ID:", req.user?._id || "No user ID found");
+
+  if (!req.user?._id) {
+    return res
+      .status(401)
+      .json({ message: "Unauthorized: No user found in request." });
+  }
 
   try {
-    const files = await File.find({ ownerId: req.user.userId });
+    const files = await File.find({ ownerId: req.user?._id });
 
-    // Generate signed URLs for each file
+    console.log(`📁 Found ${files.length} files for user ${req.user?._id}`);
+
     const filesWithUrls = await Promise.all(
       files.map(async (file) => {
         try {
-          // Extract just the file key from the full S3 URL
-          /*  const fileKey = file.filePath.replace(
-            "https://digidrive-start.s3.eu-central-1.amazonaws.com/",
-            ""
-          ); */
-
           console.log(`Generating signed URL for file: ${file.filePath}`);
-
-          // Generate the signed URL
           const signedUrl = await generateSignedUrl(file.filePath);
-
-          console.log("signedUrl getFiles", signedUrl);
-
           return { ...file.toObject(), signedUrl };
         } catch (error) {
           console.error(
             `Error generating signed URL for ${file.filePath}:`,
             error
           );
-          return { ...file.toObject(), signedUrl: null }; // Handle failures gracefully
+          return { ...file.toObject(), signedUrl: null };
         }
       })
     );
 
     res.json(filesWithUrls);
   } catch (error) {
-    console.error("Error fetching files:", error);
+    console.error("🚨 Error fetching files:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -196,14 +193,26 @@ const deleteFile = async (req, res) => {
 
     if (!file) return res.status(404).json({ message: "File not found" });
 
+    //Check if user has permissions
+    if (file.ownerId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Unauthorized: You do not own this file." });
+    }
+
     // Extract the folderId from the file (if it exists)
     const folderId = file.folderId;
 
     // Delete file from S3
-    const deleteFromS3Results = await deleteFromS3(
-      file.filePath.split("/").pop()
-    );
-    console.log("s3DELETE:", deleteFromS3Results);
+    try {
+      const deleteFromS3Results = await deleteFromS3(
+        file.filePath.split("/").pop()
+      );
+      console.log("🗑️ S3 Delete Result:", deleteFromS3Results);
+    } catch (s3Error) {
+      console.error("❌ S3 Deletion Failed:", s3Error);
+      return res.status(500).json({ message: "Error deleting file from S3." });
+    }
 
     // Delete file from database
     await File.findByIdAndDelete(fileId);
@@ -274,55 +283,34 @@ const tagFiles = async (req, res) => {
       fileIds = [fileIds];
     }
 
+    // ✅ Check file ownership before proceeding
+    try {
+      await checkFileOwnership(fileIds, req.user._id);
+    } catch (ownershipError) {
+      return res.status(403).json({ message: ownershipError.message });
+    }
+
     let updateFields = {};
 
-    // ✅ Process tags
-    if (tags) {
-      try {
-        tags = typeof tags === "string" ? JSON.parse(tags) : tags;
-      } catch (error) {
-        return res.status(400).json({ message: "Invalid tags format" });
-      }
-
-      console.log("Tags after JSON parse:", tags);
-
-      // ✅ Validate tag types before saving
-      tags = tags.map((tag) => ({
-        name: tag.name.trim(),
-        type: predefinedTags.includes(tag.name) ? tag.name : "custom", // ✅ Check if predefined
-      }));
-
-      updateFields.tags = tags;
+    if (!Array.isArray(tags)) {
+      return res.status(400).json({ message: "Tags must be an array." });
     }
 
-    // ✅ Ensure priority is saved as a tag
-    if (priority) {
-      if (priority < 1 || priority > 5) {
-        return res
-          .status(400)
-          .json({ message: "Priority must be between 1 and 5." });
-      }
+    const formattedTags = tags.map((tag) => ({
+      name: tag.name.trim(),
+      type: predefinedTags.includes(tag.name) ? tag.name : "custom",
+    }));
 
-      const priorityTag = {
-        name: "Priority",
-        type: "priority",
-        value: String(priority),
-      };
-
-      // Remove old priority tag if it exists
-      updateFields.tags =
-        updateFields.tags?.filter((tag) => tag.type !== "priority") || [];
-      updateFields.tags.push(priorityTag);
-    }
-
-    console.log("Updating Files with Fields:", updateFields);
+    console.log("Applying formatted tags:", formattedTags);
 
     // ✅ Update all selected files
     const updatedFiles = await File.updateMany(
       { _id: { $in: fileIds } },
-      { $set: updateFields },
+      { $set: { tags: formattedTags } },
       { new: true }
     );
+
+    console.log("Updating Files with Fields:", updateFields);
 
     console.log("Updated Files:", updatedFiles);
 
@@ -343,7 +331,7 @@ const tagFiles = async (req, res) => {
 };
 
 //***************************************Update File/s feeds actions in frontend**************************//
-const updateFile = async (req, res) => {
+/* const updateFile = async (req, res) => {
   try {
     const { fileId } = req.params;
     let { filename, fileIds, tags, folderId, priority } = req.body;
@@ -421,63 +409,79 @@ const updateFile = async (req, res) => {
     console.error("Error updating file:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
-};
+}; */
 
 //*************************Link files, also serves actions in frontend***************************************//
+
 const linkFiles = async (req, res) => {
   try {
-    let { fileIds, relatedFile } = req.body;
+    let { fileIds, relatedFiles, relationType } = req.body;
 
-    console.log("📩 Received Data:", req.body);
-
-    // ✅ Validate `relatedFile` and `fileIds`
-    if (!mongoose.Types.ObjectId.isValid(relatedFile)) {
-      return res
-        .status(400)
-        .json({ message: `❌ Invalid relatedFile format: ${relatedFile}` });
-    }
-
-    if (!Array.isArray(fileIds) || fileIds.length === 0) {
-      return res.status(400).json({ message: "❌ Invalid fileIds data" });
-    }
-
-    // ✅ Convert to ObjectIds
-    try {
-      fileIds = fileIds.map((id) => {
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-          throw new Error(`❌ Invalid fileId format: ${id}`);
-        }
-        return new mongoose.Types.ObjectId(id);
-      });
-
-      relatedFile = new mongoose.Types.ObjectId(relatedFile);
-    } catch (error) {
-      return res.status(400).json({ message: error.message });
-    }
-
-    console.log("🔄 Processing files:", fileIds, "🔗 Linking to:", relatedFile);
-
-    // ✅ Update `relatedFiles` array using `$addToSet`
-    const updatedFiles = await File.updateMany(
-      { _id: { $in: fileIds } },
-      { $addToSet: { relatedFiles: relatedFile } }, // ✅ Push relatedFile instead of replacing
-      { new: true }
+    console.log(
+      "🔄 Processing files:",
+      fileIds,
+      "🔗 Linking to:",
+      relatedFiles
     );
 
-    if (!updatedFiles.modifiedCount) {
+    if (!fileIds.length || !relatedFiles.length) {
       return res
-        .status(404)
-        .json({ message: "❌ Files not found or unchanged" });
+        .status(400)
+        .json({ message: "No files selected for linking." });
     }
 
-    // ✅ Fetch updated files to confirm relation was saved
-    const linkedFiles = await File.find({ _id: { $in: fileIds } });
-    console.log("✅ Linked Files:", linkedFiles);
+    if (!["reference", "duplicate", "similar"].includes(relationType)) {
+      return res.status(400).json({ message: "Invalid relation type." });
+    }
 
-    res.status(200).json({
-      message: "✅ Files linked successfully",
-      updatedFiles: linkedFiles,
+    // Convert IDs to ObjectIds
+    const fileObjectIds = fileIds.map((id) => new mongoose.Types.ObjectId(id));
+    const relatedFileIds = relatedFiles.map(
+      (id) => new mongoose.Types.ObjectId(id)
+    );
+
+    // Validate file ownership
+    const files = await File.find({
+      _id: { $in: [...fileObjectIds, ...relatedFileIds] },
     });
+    if (
+      !files.every(
+        (file) => file.ownerId.toString() === req.user._id.toString()
+      )
+    ) {
+      return res.status(403).json({
+        message: "Unauthorized: Some files do not belong to the user.",
+      });
+    }
+
+    // ✅ Link selected files to multiple related files
+    await File.updateMany(
+      { _id: { $in: fileObjectIds } },
+      {
+        $addToSet: {
+          relatedFiles: relatedFileIds.map((id) => ({
+            fileId: id,
+            relationType,
+          })),
+        },
+      }
+    );
+
+    // ✅ Link related files back to selected files
+    await File.updateMany(
+      { _id: { $in: relatedFileIds } },
+      {
+        $addToSet: {
+          relatedFiles: fileObjectIds.map((id) => ({
+            fileId: id,
+            relationType,
+          })),
+        },
+      }
+    );
+
+    console.log("✅ Files successfully linked.");
+    res.status(200).json({ message: "Files linked successfully." });
   } catch (error) {
     console.error("❌ Error linking files:", error);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -551,7 +555,7 @@ module.exports = {
   linkFiles,
   getFileVersions,
   uploadNewVersion,
-  updateFile,
+  // updateFile,
   moveFilesToFolder,
   tagFiles,
 }; // controllers/fileController.js
